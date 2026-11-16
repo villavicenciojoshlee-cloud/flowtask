@@ -153,7 +153,9 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('Tasks');
   const [showTaskAssistant, setShowTaskAssistant] = useState(false);
   const [assistantPosition, setAssistantPosition] = useState({ x: 0, y: 0 });
+  const [assistantWindowPosition, setAssistantWindowPosition] = useState({ x: 0, y: 0 });
   const assistantDrag = useRef<{ pointerId: number; x: number; y: number; originX: number; originY: number } | null>(null);
+  const assistantWindowDrag = useRef<{ pointerId: number; x: number; y: number; originX: number; originY: number } | null>(null);
   const assistantMoved = useRef(false);
   const [onboardingDone, setOnboardingDone] = useStoredState('flowtask.onboarded', false);
   const [tutorialDone, setTutorialDone] = useStoredState('flowtask.tutorial.done', false);
@@ -240,7 +242,44 @@ export default function App() {
   }
 
   function finishAssistantDrag(event: PointerEvent<HTMLButtonElement>) {
-    if (assistantDrag.current?.pointerId === event.pointerId) assistantDrag.current = null;
+    if (assistantDrag.current?.pointerId === event.pointerId) {
+      assistantDrag.current = null;
+      if (assistantMoved.current) {
+        window.setTimeout(() => { assistantMoved.current = false; }, 0);
+      }
+    }
+  }
+
+  function startAssistantWindowDrag(event: PointerEvent<HTMLDivElement>) {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    assistantWindowDrag.current = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      originX: assistantWindowPosition.x,
+      originY: assistantWindowPosition.y,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function moveAssistantWindowDrag(event: PointerEvent<HTMLDivElement>) {
+    const drag = assistantWindowDrag.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const panel = event.currentTarget.closest('.task-assistant-panel');
+    const panelBounds = panel?.getBoundingClientRect();
+    const phone = panel?.closest('.phone')?.getBoundingClientRect();
+    if (!panelBounds || !phone) return;
+    const maxX = Math.max(0, (phone.width - panelBounds.width) / 2 - 12);
+    const maxY = Math.max(0, (phone.height - panelBounds.height) / 2 - 12);
+    setAssistantWindowPosition({
+      x: Math.max(-maxX, Math.min(maxX, drag.originX + event.clientX - drag.x)),
+      y: Math.max(-maxY, Math.min(maxY, drag.originY + event.clientY - drag.y)),
+    });
+  }
+
+  function finishAssistantWindowDrag(event: PointerEvent<HTMLDivElement>) {
+    if (assistantWindowDrag.current?.pointerId === event.pointerId) assistantWindowDrag.current = null;
   }
 
   useEffect(() => {
@@ -501,7 +540,10 @@ export default function App() {
         ><Icon name="sparkles" size={21} /></button>}
         <nav className="bottom-nav" aria-label={localize(language, 'Main navigation', 'Pangunahing nabigasyon')}>{navItems.map(item => <button key={item.label} className={`nav-item ${activeTab === item.label ? 'active' : ''}`} aria-label={item.label} aria-current={activeTab === item.label ? 'page' : undefined} onClick={() => { setShowTaskAssistant(false); if (item.label === 'Calendar') setMonth(new Date(`${selectedDate}T12:00:00`)); setActiveTab(item.label); }}><span className="nav-icon"><Icon name={item.icon} size={19} /></span><span>{localize(language, item.label, item.label === 'Tasks' ? 'Mga gawain' : item.label === 'Calendar' ? 'Kalendaryo' : item.label === 'Progress' ? 'Pag-unlad' : 'Mga Setting')}</span></button>)}</nav>
         {showTaskAssistant && activeTab === 'Tasks' && <div className="task-assistant-backdrop" onClick={() => setShowTaskAssistant(false)}>
-          <section className="task-assistant-panel" role="dialog" aria-modal="true" aria-label={localize(language, 'AI day planner', 'AI day planner')} onClick={event => event.stopPropagation()}>
+          <section className="task-assistant-panel" role="dialog" aria-modal="true" aria-label={localize(language, 'AI day planner', 'AI day planner')} style={{ transform: `translate(${assistantWindowPosition.x}px, ${assistantWindowPosition.y}px)` }} onClick={event => event.stopPropagation()}>
+            <div className="task-assistant-drag-area" role="group" aria-label={localize(language, 'Drag to move AI window', 'I-drag para ilipat ang AI window')} onPointerDown={startAssistantWindowDrag} onPointerMove={moveAssistantWindowDrag} onPointerUp={finishAssistantWindowDrag} onPointerCancel={finishAssistantWindowDrag}>
+              <span className="task-assistant-drag-handle" />
+            </div>
             <div className="task-assistant-heading">
               <span className="assistant-avatar"><Icon name="sparkles" size={18} /></span>
               <div><strong>{localize(language, 'Your day planner', 'Day planner mo')}</strong><small>{localize(language, 'Based on your tasks · works offline', 'Batay sa mga gawain mo · gumagana offline')}</small></div>

@@ -1,9 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, type Href } from 'expo-router';
-import React, { useMemo, useRef, useState } from 'react';
-import { StyleSheet, TextInput, useWindowDimensions, View } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { StyleSheet, TextInput, View } from 'react-native';
 import { AddTaskSheet, DateStrip, EmptyState, FlowTaskPage, PageHeading, PrimaryButton, ScreenScroll, TaskCard, TaskProgress, flowStyles } from '@/components/FlowTaskUI';
-import { TaskAssistantSheet } from '@/components/TaskAssistantSheet';
 import { FlowText as Text } from '@/components/FlowText';
 import { TapPressable as Pressable } from '@/components/TapPressable';
 import { localize, localeFor } from '@/i18n';
@@ -17,7 +16,6 @@ type PriorityFilter = 'All' | 'Low' | 'Medium' | 'High';
 export default function HomeScreen() {
   const theme = useTheme();
   const router = useRouter();
-  const { width, height } = useWindowDimensions();
   const { settings } = useSettings();
   const { tasks } = useFlowTasks();
   const [selectedDate, setSelectedDate] = useState(dateKey(new Date()));
@@ -25,10 +23,6 @@ export default function HomeScreen() {
   const [priority, setPriority] = useState<PriorityFilter>('All');
   const [search, setSearch] = useState('');
   const [showAdd, setShowAdd] = useState(false);
-  const [showAssistant, setShowAssistant] = useState(false);
-  const [assistantPosition, setAssistantPosition] = useState({ x: 0, y: 0 });
-  const dragOrigin = useRef({ pageX: 0, pageY: 0, x: 0, y: 0 });
-  const assistantDragged = useRef(false);
   const selectedTasks = tasks.filter(task => task.date === selectedDate);
   const visibleTasks = useMemo(() => tasks.filter(task => {
     const statusMatch = filter === 'All'
@@ -46,25 +40,6 @@ export default function HomeScreen() {
         : localize(settings.language, 'Good evening', 'Magandang gabi');
   }, [settings.language]);
   const locale = localeFor(settings.language);
-  const startAssistantDrag = (event: { nativeEvent: { pageX: number; pageY: number } }) => {
-    dragOrigin.current = {
-      pageX: event.nativeEvent.pageX,
-      pageY: event.nativeEvent.pageY,
-      x: assistantPosition.x,
-      y: assistantPosition.y,
-    };
-    assistantDragged.current = false;
-  };
-  const moveAssistantDrag = (event: { nativeEvent: { pageX: number; pageY: number } }) => {
-    const dx = event.nativeEvent.pageX - dragOrigin.current.pageX;
-    const dy = event.nativeEvent.pageY - dragOrigin.current.pageY;
-    if (Math.abs(dx) <= 5 && Math.abs(dy) <= 5) return;
-    assistantDragged.current = true;
-    setAssistantPosition({
-      x: Math.max(-Math.max(0, width - 80), Math.min(0, dragOrigin.current.x + dx)),
-      y: Math.max(-Math.max(0, height - 170), Math.min(0, dragOrigin.current.y + dy)),
-    });
-  };
 
   return (
     <FlowTaskPage onProfilePress={() => router.navigate('/preferences' as Href)}>
@@ -97,24 +72,7 @@ export default function HomeScreen() {
         </View>
         {visibleTasks.length ? visibleTasks.map(task => <TaskCard key={task.id} task={task} />) : <EmptyState title={localize(settings.language, 'Nothing on this list', 'Walang laman ang listahang ito')} body={localize(settings.language, 'Try a different filter or add a new task to get started.', 'Sumubok ng ibang filter o magdagdag ng gawain para makapagsimula.')} />}
       </ScreenScroll>
-      <View onTouchStart={startAssistantDrag} onTouchMove={moveAssistantDrag} style={[styles.assistantFab, { transform: [{ translateX: assistantPosition.x }, { translateY: assistantPosition.y }] }]}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={localize(settings.language, 'Open your AI day planner', 'Buksan ang AI day planner')}
-          onPress={() => {
-            if (assistantDragged.current) {
-              assistantDragged.current = false;
-              return;
-            }
-            setShowAssistant(true);
-          }}
-          style={({ pressed }) => [styles.assistantFabButton, { backgroundColor: theme.buttonPrimary, opacity: pressed ? 0.82 : 1 }]}
-        >
-          <Ionicons name="sparkles" size={22} color={theme.text} />
-        </Pressable>
-      </View>
       <AddTaskSheet visible={showAdd} initialDate={selectedDate} onClose={() => setShowAdd(false)} />
-      <TaskAssistantSheet visible={showAssistant} onClose={() => setShowAssistant(false)} tasks={tasks} />
     </FlowTaskPage>
   );
 }
@@ -134,6 +92,4 @@ const styles = StyleSheet.create({
   priorityLabel: { flex: 1, fontSize: 8, fontWeight: '800', letterSpacing: 0.8 },
   filterPill: { minHeight: 31, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 9, borderWidth: 1, borderRadius: 16 },
   filterPillCompact: { minHeight: 26, paddingHorizontal: 8 },
-  assistantFab: { position: 'absolute', right: 18, bottom: 18, width: 54, height: 54, borderRadius: 27, elevation: 7, shadowColor: '#000000', shadowOpacity: 0.18, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } },
-  assistantFabButton: { width: 54, height: 54, alignItems: 'center', justifyContent: 'center', borderRadius: 27 },
 });

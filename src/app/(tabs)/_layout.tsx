@@ -1,16 +1,18 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { DeviceEventEmitter } from 'react-native';
-import { ScrollView, StyleSheet, useWindowDimensions, View, type ColorValue } from 'react-native';
+import { ScrollView, StyleSheet, useWindowDimensions, View, type ColorValue, type GestureResponderEvent } from 'react-native';
 import Storage from 'expo-sqlite/kv-store';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter, type Href } from 'expo-router';
-import { FloatingTabBar } from '@/components/FloatingTabBar';
+import { usePathname, useRouter, type Href } from 'expo-router';
+import { FloatingTabBar, TAB_BAR_GAP, TAB_BAR_HEIGHT } from '@/components/FloatingTabBar';
 import { FlowText as Text } from '@/components/FlowText';
 import { TapPressable as Pressable } from '@/components/TapPressable';
+import { TaskAssistantSheet } from '@/components/TaskAssistantSheet';
 import { localize } from '@/i18n';
 import { useSettings } from '@/settings/SettingsContext';
+import { useFlowTasks } from '@/tasks/FlowTasksContext';
 import { useTheme } from '@/theme';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
@@ -32,11 +34,39 @@ function tabIcon(filled: IconName, outline: IconName) {
 export default function TabLayout() {
   const theme = useTheme();
   const { settings } = useSettings();
+  const { tasks } = useFlowTasks();
   const router = useRouter();
+  const pathname = usePathname();
+  const { width, height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const [tutorialVisible, setTutorialVisible] = useState(false);
   const [tutorialLoaded, setTutorialLoaded] = useState(false);
   const [tutorialStep, setTutorialStep] = useState(0);
   const [neverAskAgain, setNeverAskAgain] = useState(false);
+  const [showAssistant, setShowAssistant] = useState(false);
+  const [assistantPosition, setAssistantPosition] = useState({ x: 0, y: 0 });
+  const dragOrigin = useRef({ pageX: 0, pageY: 0, x: 0, y: 0 });
+  const assistantDragged = useRef(false);
+
+  const startAssistantDrag = (event: GestureResponderEvent) => {
+    dragOrigin.current = {
+      pageX: event.nativeEvent.pageX,
+      pageY: event.nativeEvent.pageY,
+      x: assistantPosition.x,
+      y: assistantPosition.y,
+    };
+    assistantDragged.current = false;
+  };
+  const moveAssistantDrag = (event: GestureResponderEvent) => {
+    const dx = event.nativeEvent.pageX - dragOrigin.current.pageX;
+    const dy = event.nativeEvent.pageY - dragOrigin.current.pageY;
+    if (Math.abs(dx) <= 5 && Math.abs(dy) <= 5) return;
+    assistantDragged.current = true;
+    setAssistantPosition({
+      x: Math.max(-Math.max(0, width - 80), Math.min(0, dragOrigin.current.x + dx)),
+      y: Math.max(-Math.max(0, height - 170), Math.min(0, dragOrigin.current.y + dy)),
+    });
+  };
 
   useEffect(() => {
     let active = true;
@@ -105,10 +135,12 @@ export default function TabLayout() {
         <Tabs.Screen
           name="calendar"
           options={{ title: localize(settings.language, 'Calendar', 'Kalendaryo'), tabBarIcon: tabIcon('calendar', 'calendar-outline') }}
+          listeners={{ tabPress: () => setShowAssistant(false) }}
         />
         <Tabs.Screen
           name="weekly"
           options={{ title: localize(settings.language, 'Progress', 'Pag-unlad'), tabBarIcon: tabIcon('bar-chart', 'bar-chart-outline') }}
+          listeners={{ tabPress: () => setShowAssistant(false) }}
         />
         <Tabs.Screen
           name="chat"
@@ -117,8 +149,41 @@ export default function TabLayout() {
         <Tabs.Screen
           name="preferences"
           options={{ title: localize(settings.language, 'Settings', 'Mga Setting'), tabBarIcon: tabIcon('settings', 'settings-outline') }}
+          listeners={{ tabPress: () => setShowAssistant(false) }}
         />
       </Tabs>
+      {pathname === '/' ? (
+        <>
+          <View
+            style={[
+              styles.assistantFab,
+              {
+                bottom: TAB_BAR_HEIGHT + TAB_BAR_GAP + Math.max(insets.bottom, 8),
+                transform: [{ translateX: assistantPosition.x }, { translateY: assistantPosition.y }],
+              },
+            ]}
+          >
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={localize(settings.language, 'Open your AI day planner', 'Buksan ang AI day planner')}
+              accessibilityHint={localize(settings.language, 'Drag to move the AI button. Tap to open.', 'I-drag para ilipat ang AI button. I-tap para buksan.')}
+              onTouchStart={startAssistantDrag}
+              onTouchMove={moveAssistantDrag}
+              onPress={() => {
+                if (assistantDragged.current) {
+                  assistantDragged.current = false;
+                  return;
+                }
+                setShowAssistant(true);
+              }}
+              style={({ pressed }) => [styles.assistantFabButton, { backgroundColor: theme.buttonPrimary, opacity: pressed ? 0.82 : 1 }]}
+            >
+              <Ionicons name="sparkles" size={22} color={theme.text} />
+            </Pressable>
+          </View>
+          <TaskAssistantSheet visible={showAssistant} onClose={() => setShowAssistant(false)} tasks={tasks} />
+        </>
+      ) : null}
       {tutorialLoaded && tutorialVisible ? <TutorialOverlay
         step={tutorialStep}
         neverAskAgain={neverAskAgain}
@@ -185,4 +250,6 @@ const styles = StyleSheet.create({
   tutorialCheckbox: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 1 },
   tutorialActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 3 },
   tutorialButton: { minWidth: 74, minHeight: 34, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10, borderWidth: 1, borderRadius: 10 },
+  assistantFab: { position: 'absolute', zIndex: 10, right: 18, width: 54, height: 54, borderRadius: 27, elevation: 10, shadowColor: '#000000', shadowOpacity: 0.18, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } },
+  assistantFabButton: { width: 54, height: 54, alignItems: 'center', justifyContent: 'center', borderRadius: 27 },
 });

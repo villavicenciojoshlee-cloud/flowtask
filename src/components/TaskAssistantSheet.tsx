@@ -7,9 +7,10 @@ import {
   ScrollView,
   StyleSheet,
   TextInput,
+  type GestureResponderEvent,
+  useWindowDimensions,
   View,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FlowText as Text } from '@/components/FlowText';
 import { TapPressable as Pressable } from '@/components/TapPressable';
 import { localize } from '@/i18n';
@@ -29,8 +30,11 @@ export function TaskAssistantSheet({ visible, onClose, tasks }: {
 }) {
   const theme = useTheme();
   const { settings } = useSettings();
-  const insets = useSafeAreaInsets();
+  const dimensions = useWindowDimensions();
   const listRef = useRef<ScrollView>(null);
+  const dragOrigin = useRef({ pageX: 0, pageY: 0, x: 0, y: 0 });
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [panelSize, setPanelSize] = useState({ width: 0, height: 0 });
   const [draft, setDraft] = useState('');
   const [messages, setMessages] = useState<Message[]>([{
     id: 'welcome',
@@ -41,6 +45,25 @@ export function TaskAssistantSheet({ visible, onClose, tasks }: {
   useEffect(() => {
     listRef.current?.scrollToEnd({ animated: true });
   }, [messages]);
+
+  const startDrag = (event: GestureResponderEvent) => {
+    dragOrigin.current = {
+      pageX: event.nativeEvent.pageX,
+      pageY: event.nativeEvent.pageY,
+      x: position.x,
+      y: position.y,
+    };
+  };
+  const moveDrag = (event: GestureResponderEvent) => {
+    const dx = event.nativeEvent.pageX - dragOrigin.current.pageX;
+    const dy = event.nativeEvent.pageY - dragOrigin.current.pageY;
+    const maxX = Math.max(0, (dimensions.width - panelSize.width) / 2 - 12);
+    const maxY = Math.max(0, (dimensions.height - panelSize.height) / 2 - 12);
+    setPosition({
+      x: Math.max(-maxX, Math.min(maxX, dragOrigin.current.x + dx)),
+      y: Math.max(-maxY, Math.min(maxY, dragOrigin.current.y + dy)),
+    });
+  };
 
   const send = (text = draft) => {
     const question = text.trim();
@@ -54,11 +77,32 @@ export function TaskAssistantSheet({ visible, onClose, tasks }: {
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.backdrop}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.backdrop}>
         <Pressable accessibilityLabel="Close task assistant" onPress={onClose} style={StyleSheet.absoluteFill} />
-        <View style={[styles.sheet, { backgroundColor: theme.card, paddingBottom: Math.max(insets.bottom, 14) }]}>
-          <View style={[styles.handle, { backgroundColor: theme.border }]} />
+        <View
+          onLayout={event => setPanelSize({
+            width: event.nativeEvent.layout.width,
+            height: event.nativeEvent.layout.height,
+          })}
+          style={[
+            styles.sheet,
+            {
+              backgroundColor: theme.card,
+              borderColor: theme.border,
+              transform: [{ translateX: position.x }, { translateY: position.y }],
+            },
+          ]}
+        >
+          <View
+            accessibilityRole="button"
+            accessibilityLabel={localize(settings.language, 'Move AI window', 'Ilipat ang AI window')}
+            onTouchStart={startDrag}
+            onTouchMove={moveDrag}
+            style={styles.dragArea}
+          >
+            <View style={[styles.handle, { backgroundColor: theme.border }]} />
+          </View>
           <View style={styles.heading}>
             <View style={[styles.avatar, { backgroundColor: theme.buttonSecondary }]}>
               <Ionicons name="sparkles" size={18} color={theme.tint} />
@@ -132,9 +176,10 @@ export function TaskAssistantSheet({ visible, onClose, tasks }: {
 }
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(10,18,14,0.48)' },
-  sheet: { height: '78%', maxHeight: 680, paddingHorizontal: 18, paddingTop: 10, borderTopLeftRadius: 24, borderTopRightRadius: 24 },
-  handle: { width: 36, height: 4, alignSelf: 'center', borderRadius: 2, marginBottom: 13 },
+  backdrop: { flex: 1, justifyContent: 'center', paddingHorizontal: 16, paddingVertical: 24, backgroundColor: 'rgba(10,18,14,0.48)' },
+  sheet: { alignSelf: 'center', width: '100%', maxWidth: 480, height: '72%', minHeight: 320, maxHeight: 620, paddingHorizontal: 18, paddingTop: 10, paddingBottom: 16, borderWidth: StyleSheet.hairlineWidth, borderRadius: 24, elevation: 12, shadowColor: '#000000', shadowOpacity: 0.22, shadowRadius: 18, shadowOffset: { width: 0, height: 8 } },
+  dragArea: { width: 72, height: 28, alignSelf: 'center', alignItems: 'center', justifyContent: 'center', marginBottom: 5 },
+  handle: { width: 36, height: 4, borderRadius: 2 },
   heading: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
   avatar: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 13 },
   headingCopy: { flex: 1 },
